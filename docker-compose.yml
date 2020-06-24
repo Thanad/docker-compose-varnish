@@ -1,0 +1,113 @@
+version: "3.3"
+services:
+  traefik:
+    image: traefik:v2.2
+    restart: unless-stopped
+    container_name: "traefik"
+    command:
+      # - "--log.level=DEBUG"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+  cache_0:
+    build: ./varnish
+    image: varnish_cache
+    restart: unless-stopped
+    volumes:
+      - './:/src'
+      - './default.vcl:/etc/varnish/default.vcl'
+      - './varnish/secret:/etc/varnish/secret'
+      - './dashboard/agent_secret:/etc/varnish/agent_secret'
+    environment:
+      AGENT_PORT: 6086
+    entrypoint:
+      - sh
+      - -c
+    command:
+      - |-
+        docker-entrypoint
+    ports:
+      - "80"
+      - "6086:6086"
+      - "6082"
+    labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.route.rule=Host(`varnish.localhost`)"
+        - "traefik.http.routers.route.entrypoints=web"
+        - "traefik.http.services.cache.loadbalancer.server.port=80"
+
+  cache_1:
+    build: ./varnish
+    image: varnish_cache
+    restart: unless-stopped
+    volumes:
+      - './:/src'
+      - './default.vcl:/etc/varnish/default.vcl'
+      - './varnish/secret:/etc/varnish/secret'
+      - './dashboard/agent_secret:/etc/varnish/agent_secret'
+    environment:
+      AGENT_PORT: 6087
+    entrypoint:
+      - sh
+      - -c
+    command:
+      - |-
+        docker-entrypoint
+    ports:
+      - "80"
+      - "6087:6087"
+      - "6082"
+    labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.route.rule=Host(`varnish.localhost`)"
+        - "traefik.http.routers.route.entrypoints=web"
+        - "traefik.http.services.cache.loadbalancer.server.port=80"
+
+  dashboard:
+    build: ./dashboard
+    image: varnish-dashboard
+    restart: unless-stopped
+    volumes:
+      - './dashboard/config.js:/var/www/varnish-dashboard/config.js'
+      - './dashboard/agent_secret:/etc/varnish/agent_secret'
+    ports:
+      - "80"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`dashboard.localhost`)"
+      - "traefik.http.routers.dashboard.entrypoints=web"
+      - "traefik.http.services.dashboard.loadbalancer.server.port=6085"
+
+  hello-world:
+    image: rancher/hello-world
+    ports:
+      - "80"
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
+  node_exporter:
+    image: prom/node-exporter
+    command:
+      - "--no-collector.mdadm"
+
+  grafana:
+    image: grafana/grafana
+    volumes:
+      - './grafana/grafana.ini:/etc/grafana/grafana.ini'
+      - './grafana/provisioning:/etc/grafana/provisioning'
+    ports:
+      - "3000:3000"
+
+volumes:
+  prometheus_data:
